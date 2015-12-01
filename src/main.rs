@@ -61,61 +61,31 @@ const BOOTSTRAP_IP: &'static str = "144.76.60.215";
 const BOOTSTRAP_PORT: u16 = 33445;
 const BOOTSTRAP_KEY: &'static str = "04119E835DF3E78BACF0F84235B300546AF8B936F035185E2A8E9E0A67C8924F";
 
-fn load_tox() -> Option<Tox>
+fn load_tox() -> Result<Tox, String>
 {
     let options = ToxOptions::new();
     let path = Path::new(PROFILE_DATA_PATH);
     let display = path.display();
 
-    let file_exists = match metadata(&path) {
-        Ok(_) => true,
-        Err(_)   => false,
-    };
+    let file_exists = metadata(&path).is_ok();
 
     if !file_exists {
-        match File::create(&path) {
-            Ok(_) => (),
-            Err(e) => println!("Failed to create data file {}: {}", display, Error::description(&e)),
-        };
+        File::create(&path).expect(&format!("Failed to create data file {}", display));
 
-        let tox = match Tox::new(options, None) {
-            Ok(tox) => tox,
-            Err(e)  => {
-                println!("Tox instance failed to initialize ({:?})", e);
-                return None;
-            }
-        };
+        let tox = Tox::new(options, None).map_err(|e| format!("Failed to open data file {}: {:?}", display, &e));
 
-        return Some(tox);
+        return tox;
     } else {
-        let fp = match File::open(path) {
-            Ok(fp) => fp,
-            Err(e) => {
-                println!("Failed to open data file {}: {}", display, Error::description(&e));
-                return None;
-            }
-        };
+        let fp = try!(File::open(path).map_err(|e| format!("Failed to open data file {}: {:?}", display, &e)));
 
         let mut buf = Vec::new();
         let mut reader = BufReader::new(&fp);
 
-        match reader.read_to_end(&mut buf) {
-            Ok(_) => (),
-            Err(e) => {
-                println!("Failed to read tox data to buffer: {}", Error::description(&e));
-                return None;
-            }
-        };
+        try!(reader.read_to_end(&mut buf).map_err(|e| format!("Failed to read tox data to buffer: {}", &e)));
 
-        let tox = match Tox::new(options, Some(&mut buf)) {
-            Ok(tox) => tox,
-            Err(e)  => {
-                println!("Tox instance failed to initialize ({:?})", e);
-                return None;
-            }
-        };
+        let tox = Tox::new(options, Some(&mut buf)).map_err(|e| format!("Tox instance failed to initialize ({:?})", e));
 
-        return Some(tox);
+        return tox;
     }
 }
 
@@ -407,8 +377,11 @@ fn do_rustybot(bot: &mut Bot)
 fn main()
 {
     let mut tox = match load_tox() {
-        Some(tox) => tox,
-        None      => return,
+        Ok(tox) => tox,
+        Err(e)  => {
+		println!("{}", e); 
+		return;
+	}
     };
 
     init_tox(&mut tox);
